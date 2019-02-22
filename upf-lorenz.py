@@ -154,8 +154,6 @@ if v >= 1:
   ax.set_ylabel('Y axis')
   ax.set_zlabel('Z axis')
 
-# augmented state: (x1, x2, x3, rho, sigma, beta, q1, q2, q3, v1, v2, v3)^T
-# observation:     (y1, y2, y3)^T
 N = 200 # particles
 n =  12 # augmented state dimension
 m =   3 # observation dimension
@@ -352,15 +350,10 @@ for k in range(1, len(tt)):
   if v >= 1: ax.scatter(a_y[0,k], a_y[1,k], a_y[2,k], c='r', marker='o', linewidth=1, label="y")
   if v >= 1: ax.plot([a_y[0,k-1], a_y[0,k]], [a_y[1,k-1], a_y[1,k]], zs=[a_y[2,k-1], a_y[2,k]], c='r')
 
-  # 2.1 importance sampling step
-  # 2.1.a proposal distribution
   x_mean_post1, P_post1 = ukf(a_y[:,k], x_mean_post_prev1, P_post_prev1)
+  xhat1 = sample_normal(x_mean_post1, P_post1, N, n)
 
-  xhat1 = sample_normal(x_mean_post1, P_post1, N, n) # xhat1[N, n]
-  # our chain is now (a_x_post[:,k-1], xhat1)
-
-  # 2.1.b evaluate the importance weights
-  likelihood  = calc_likelihood(a_y[:,k].reshape(m,1), xhat1, h, R, sqrtR, N, n, m) # likelihood[N]
+  likelihood  = calc_likelihood(a_y[:,k].reshape(m,1), xhat1, h, R, sqrtR, N, n, m)
   trans_prior = calc_trans_prior(xhat1, x_mean_post_prev1, N, n, m)
   proposal    = calc_proposal(xhat1, x_mean_post1, P_post1, N, n)
   w = w * likelihood * trans_prior / proposal
@@ -373,7 +366,6 @@ for k in range(1, len(tt)):
   ess = 1.0 / np.sum(w*w)
   if ess < N/2:
     print("k=%d, ess=%.3f < %d, resampling" % (k, ess, N/2))
-    # 2.2 resample
     idx2 = residual_resample(np.arange(N), w, N, n)
     x_mean_post_prev2 = np.copy(x_mean_post_prev1[idx2,:])
     P_post_prev2      = np.copy(P_post_prev1[idx2,:])
@@ -387,9 +379,8 @@ for k in range(1, len(tt)):
     xhat2             = np.copy(xhat1)
     P_post2           = np.copy(P_post1)
 
-  # 2.3 MCMC step (Metropolis-Hastings)
   x_mean_post2, P_tag2 = ukf(a_y[:,k], x_mean_post_prev2, P_post_prev2)
-  xtag2 = sample_normal(x_mean_post2, P_tag2, N, n) # get candidate samples
+  xtag2 = sample_normal(x_mean_post2, P_tag2, N, n)
   lik_tag      = calc_likelihood(a_y[:,k].reshape(m,1), xtag2, h, R, sqrtR, N, n, m)
   prior_tag    = calc_trans_prior(xtag2, x_mean_post_prev2, N, n, m)
   proposal_tag = calc_proposal(xtag2, x_mean_post2, P_tag2, N, n)
@@ -414,11 +405,9 @@ for k in range(1, len(tt)):
       rejected += 1
   print("accepted=%d (%.0f%%), rejected=%d" % (accepted, accepted*100.0/N, rejected))
 
-  # 2.4 calc estimate
   a_x_post[:,k] = np.sum(np.tile(w, (n,1)).T * xhat2, axis=0)
 
-  a_x_pri[:,k] = col_mean(x_mean_pri) # only for drawing
-  # a_x_post[:,k] = col_mean(x_mean_post1) # just temporarily
+  a_x_pri[:,k] = col_mean(x_mean_pri)
 
   x_x_pri = a_x[0:m,k] - a_x_pri[0:m,k]
   pri_dist = np.sqrt(np.einsum('i,i->', x_x_pri, x_x_pri))
@@ -457,31 +446,4 @@ for k in range(1, len(tt)):
     print("k = %d / %d" % (k, t_num))
     print("rho=%.3f (%.3f), sigma=%.3f (%.3f), beta=%.3f (%.3f)" % (a_x_post[3,k],rho, a_x_post[4,k],sigma, a_x_post[5,k],beta))
 
-# stats
-x_x_pri = a_x[0:m,:] - a_x_pri[0:m,:]
-pri_err = np.sum(np.sqrt(np.einsum('ij,ij->j', x_x_pri, x_x_pri)))
-pri_err2 = np.sum(np.sqrt(np.sum((a_x[0:m,:] - a_x_pri[0:m,:])**2, axis=0)))
-assert(abs(pri_err - pri_err2) < 1e-10)
-x_y = a_x[0:m,:] - a_y[:,:]
-y_err = np.sum(np.sqrt(np.einsum('ij,ij->j', x_y, x_y)))
-x_x_post = a_x[0:m,:] - a_x_post[0:m,:]
-post_err = np.sum(np.sqrt(np.einsum('ij,ij->j', x_x_post, x_x_post)))
-print("pri_err=%.1f, y_err=%.1f, post_err=%.1f" % (pri_err, y_err, post_err))
-
-with open(__file__+".csv", 'w') as file:
-  for j in range(t_num):
-    file.write("%f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f\n" % (a_x_pri[0,j],a_x_pri[1,j],a_x_pri[2,j],
-               a_x[0,j],a_x[1,j],a_x[2,j], a_y[0,j],a_y[1,j],a_y[2,j], a_x_post[0,j],a_x_post[1,j],a_x_post[2,j]))
-with open(__file__+".session.txt", 'w') as file:
-  for key in dir():
-    if type(globals()[key]).__name__ not in ("function", "module", "type", "TextIOWrapper") and not key.startswith('_'):
-      val = str(globals()[key])
-      if len(val) > 20:
-        file.write("%s =\n%s\n\n" % (key, val))
-      else:
-        file.write("%s = %s\n\n" % (key, val))
-if v >= 1:
-  plt.savefig(__file__+".png", bbox_inches="tight")
-  plt.ioff()
-  plt.show()
 postscript(start_time)
