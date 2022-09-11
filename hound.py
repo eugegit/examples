@@ -7,6 +7,7 @@ import scipy
 import scipy.linalg
 import math
 import time
+from util import is_positive_semi_definite
 
 dt = 1
 # transition matrix
@@ -31,8 +32,6 @@ R = r*I
 
 F1 = scipy.linalg.pinv(H.T.dot(np.linalg.inv(R).dot(H))) # inverse of Fisher information matrix
 
-eps = np.finfo(float).eps # or 7.0/3 — 4.0/3 — 1
-print("eps =", eps)
 np.set_printoptions(precision=8, suppress=True)
 
 def calc_hare(t):
@@ -53,15 +52,6 @@ def calc_hound_predict(x):
   calc_hound_predict.P_minus = F.dot(calc_hound_update.P).dot(F.T) + Q
   return x_pri
 calc_hound_predict.P_minus = None
-
-def is_positive_semi_definite(A, msg="not positive semidefinite: "):
-  w, V = scipy.linalg.eig(A)
-  assert(np.all(np.imag(w) > -eps))
-  if np.any(np.real(w) < 0):
-    print(msg, "eig =", np.real(w))
-    return False
-  else:
-    return True
 
 def calc_hound_update(x_pri, y):
   # innovation or measurement residual
@@ -120,7 +110,7 @@ y = calc_observation(x)
 x_post = np.array([[0, 0,     # x1, x2
                     0, 0,     # v1, v2
                     0, 0]]).T # a1, a2
-x_pri = x_post
+x_pri = np.copy(x_post)
 px, = ax.plot(x[0,0], x[1,0], 'rx')
 py, = ax.plot(y[0,0], y[1,0], 'ro')
 py_cir = plt.Circle((y[0,0], y[1,0]), math.sqrt(r), color='r', alpha=0.1); ax.add_artist(py_cir)
@@ -137,10 +127,10 @@ px_post_prev = px_post
 px_post_cir_prev = px_post_cir
 fig.canvas.flush_events(); time.sleep(0.3)
 t_pre = t
-x_pre = x
-y_pre = y
-x_pri_pre = x_post
-x_post_pre = x_post
+x_pre = np.copy(x)
+y_pre = np.copy(y)
+x_pri_pre = np.copy(x_post)
+x_post_pre = np.copy(x_post)
 
 for t in np.arange(0.1, 2*math.pi-0.2, 0.1):
   x = calc_hare(t)
@@ -181,10 +171,10 @@ for t in np.arange(0.1, 2*math.pi-0.2, 0.1):
   px_post_cir_prev = px_post_cir
   fig.canvas.flush_events(); time.sleep(0.2)
   t_pre = t
-  x_pre = x
-  y_pre = y
-  x_pri_pre = x_pri
-  x_post_pre = x_post
+  x_pre = np.copy(x)
+  y_pre = np.copy(y)
+  x_pri_pre = np.copy(x_pri)
+  x_post_pre = np.copy(x_post)
 plt.ioff()
 plt.show()
 print("end.")
